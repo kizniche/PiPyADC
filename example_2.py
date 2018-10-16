@@ -19,7 +19,7 @@ import time
 import numpy as np
 import itertools
 from ADS1256_definitions import *
-from pipyadc import ADS1256
+from pipyadc_py3 import ADS1256
 # In this example, we pretend myconfig_2 was a different configuration file
 # named "myconfig_2.py" for a second ADS1256 chip connected to the SPI bus.
 import ADS1256_default_config as myconfig_2
