@@ -10,7 +10,7 @@ Ulrich Lukas 2017-03-10
 """
 import sys
 from ADS1256_definitions import *
-from pipyadc import ADS1256
+from pipyadc_py3 import ADS1256
 
 ### START EXAMPLE ###
 ################################################################################
