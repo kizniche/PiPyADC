@@ -362,11 +362,11 @@ class ADS1256(object):
         # wiringPiSPIDataRW() returns a Linux ioctl() error code.
         # We ignore that since we already checked for presence of the file
         # descriptor of the SPI device during initialisation.
-        wp.wiringPiSPIDataRW(self.SPI_CHANNEL, "%s" % chr(mybyte&0xFF))
+        wp.wiringPiSPIDataRW(self.SPI_CHANNEL, bytes([mybyte&0xFF]))
 
     def _read_byte(self):
         # Returns a byte read via the SPI bus
-        MISObyte = wp.wiringPiSPIDataRW(self.SPI_CHANNEL, chr(0xFF))
+        MISObyte = wp.wiringPiSPIDataRW(self.SPI_CHANNEL, bytes([0xFF]))
         return ord(MISObyte[1])
 
 
@@ -778,7 +778,3 @@ class ADS1256(object):
         for i in range(0, buf_len):
             ch_buffer[i] = self.read_and_next_is(ch_sequence[(i+1)%buf_len])
         return ch_buffer
-
-
-
-
