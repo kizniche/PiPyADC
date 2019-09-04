@@ -18,6 +18,7 @@ https://www.gnu.org/licenses/old-licenses/lgpl-2.1-standalone.html
 Ulrich Lukas, 2017-03-03
 """
 import time
+import struct
 import wiringpi as wp
 from ADS1256_definitions import *
 import ADS1256_default_config
@@ -215,7 +216,7 @@ class ADS1256(object):
             # Generate 24-Bit 2's complement.
             if value < 0:
                 value += 0x1000000
-            # self._send_byte() automatically truncates to uint8
+            # self.write_reg() automatically truncates to uint8
             self.write_reg(REG_OFC0, value)
             value >>= 8
             self.write_reg(REG_OFC1, value)
@@ -238,7 +239,7 @@ class ADS1256(object):
         if value < 0 or value > 0xFFFFFF:
             raise ValueError("Error: This must be a positive int of 24-bit range")
         else:
-            # self._send_byte() automatically truncates to uint8
+            # self.write_reg() automatically truncates to uint8
             self.write_reg(REG_FSC0, value)
             value >>= 8
             self.write_reg(REG_FSC1, value)
@@ -295,7 +296,6 @@ class ADS1256(object):
                 conf.SPI_CHANNEL, conf.SPI_FREQUENCY, conf.SPI_MODE)
         if fd == -1:
             raise IOError("ERROR: Could not access SPI device file")
-            return False
         
         # ADS1255/ADS1256 command timing specifications. Do not change.
         # Delay between requesting data and reading the bus for
@@ -316,7 +316,6 @@ class ADS1256(object):
         # RREG, WREG and RDATA commands.
         self._T_11_TIMEOUT_US   = int(1 + (4*1000000)/conf.CLKIN_FREQUENCY)
 
-       
         # Initialise class properties
         self.v_ref         = conf.v_ref
 
@@ -355,19 +354,34 @@ class ADS1256(object):
             # The minimum t_11 timeout between commands, see datasheet Figure 1.
             wp.delayMicroseconds(self._T_11_TIMEOUT_US)
 
-    def _send_byte(self, mybyte):
-        # Sends a byte via the SPI bus
-        # Workaround for single-byte transfers due to mutation of immutable
-        # function argument. Thanks @JKR
-        # wiringPiSPIDataRW() returns a Linux ioctl() error code.
-        # We ignore that since we already checked for presence of the file
-        # descriptor of the SPI device during initialisation.
-        wp.wiringPiSPIDataRW(self.SPI_CHANNEL, bytes([mybyte&0xFF]))
+    def _send_uint8(self, *vals):
+        # Reads integers in range (0, 255), sends as uint-8 via the SPI bus
+        wp.wiringPiSPIDataRW(self.SPI_CHANNEL,
+                             struct.pack("{}B".format(len(vals)), *vals))
+        # Python3 only:
+        # wp.wiringPiSPIDataRW(self.SPI_CHANNEL, bytes(vals))
 
-    def _read_byte(self):
-        # Returns a byte read via the SPI bus
-        MISObyte = wp.wiringPiSPIDataRW(self.SPI_CHANNEL, bytes([0xFF]))
-        return ord(MISObyte[1])
+    def _read_uint8(self, n_vals=1):
+        # Returns tuple containing unsigned 8-bit int interpretation of
+        # n_vals bytes read via the SPI bus. n_bytes is supposed to 
+        n_bytes, data = wp.wiringPiSPIDataRW(self.SPI_CHANNEL, b"\xFF"*n_vals)
+        assert n_bytes == n_vals
+        return struct.unpack("{}B".format(n_bytes), data)
+        # Python3 only:
+        # return tuple(data)
+
+    def _read_int24(self):
+        # Returns signed int interpretation of three bytes read via the SPI bus
+        _, data = wp.wiringPiSPIDataRW(self.SPI_CHANNEL, b"\xFF\xFF\xFF")
+        return struct.unpack(">i", data + b"\x00")[0] >> 8
+        # Python3 only:
+        # return int.from_bytes(data, "big", signed=True)
+
+    def _send_int24(self, val):
+        wp.wiringPiSPIDataRW(self.SPI_CHANNEL, struct.pack(">i", val))[1:4]
+        # Python3 only:
+        # wp.wiringPiSPIDataRW(self.SPI_CHANNEL, int.to_bytes(val, 3, "big"))
+
 
 
     def wait_DRDY(self):
@@ -410,10 +424,9 @@ class ADS1256(object):
         Argument: register address
         """
         self._chip_select()
-        self._send_byte(CMD_RREG | register)
-        self._send_byte(0x00)
+        self._send_uint8(CMD_RREG | register, 0x00)
         wp.delayMicroseconds(self._DATA_TIMEOUT_US)
-        read = self._read_byte()
+        read, = self._read_uint8()
         # Release chip select and implement t_11 timeout
         self._chip_release()
         return read
@@ -425,11 +438,9 @@ class ADS1256(object):
         Arguments: register address, data byte (uint_8)
         """
         self._chip_select()
-        # Tell the ADS chip which register to start writing at
-        self._send_byte(CMD_WREG | register)
-        # Tell the ADS chip how many additional registers to write
-        self._send_byte(0x00)
-        self._send_byte(data)
+        # Tell the ADS chip which register to start writing at,
+        # how many additional registers to write (0x00) and send data
+        self._send_uint8(CMD_WREG | register, 0x00, data&0xFF)
         # Release chip select and implement t_11 timeout
         self._chip_release()
 
@@ -441,7 +452,7 @@ class ADS1256(object):
         Sets the ADS1255/ADS1256 OFC register.
         """
         self._chip_select()
-        self._send_byte(CMD_SELFOCAL)
+        self._send_uint8(CMD_SELFOCAL)
         self.wait_DRDY()
         # Release chip select and implement t_11 timeout
         self._chip_release()
@@ -454,7 +465,7 @@ class ADS1256(object):
         Sets the ADS1255/ADS1256 FSC register.
         """
         self._chip_select()
-        self._send_byte(CMD_SELFGCAL)
+        self._send_uint8(CMD_SELFGCAL)
         self.wait_DRDY()
         # Release chip select and implement t_11 timeout
         self._chip_release()
@@ -467,7 +478,7 @@ class ADS1256(object):
         Sets the ADS1255/ADS1256 OFC and FSC registers.
         """
         self._chip_select()
-        self._send_byte(CMD_SELFCAL)
+        self._send_uint8(CMD_SELFCAL)
         self.wait_DRDY()
         # Release chip select and implement t_11 timeout
         self._chip_release()
@@ -479,7 +490,7 @@ class ADS1256(object):
         The input multiplexer must be set to the appropriate pins first.
         """
         self._chip_select()
-        self._send_byte(CMD_SYSOCAL)
+        self._send_uint8(CMD_SYSOCAL)
         self.wait_DRDY()
         # Release chip select and implement t_11 timeout
         self._chip_release()
@@ -491,7 +502,7 @@ class ADS1256(object):
         The input multiplexer must be set to the appropriate pins first.
         """
         self._chip_select()
-        self._send_byte(CMD_SYSGCAL)
+        self._send_uint8(CMD_SYSGCAL)
         self.wait_DRDY()
         # Release chip select and implement t_11 timeout
         self._chip_release()
@@ -501,7 +512,7 @@ class ADS1256(object):
         """Put chip in low-power standby mode
         """
         self._chip_select()
-        self._send_byte(CMD_STANDBY)
+        self._send_uint8(CMD_STANDBY)
         # Release chip select and implement t_11 timeout
         self._chip_release()
 
@@ -517,7 +528,7 @@ class ADS1256(object):
         Call standby() to enter standby mode again.
         """
         self._chip_select()
-        self._send_byte(CMD_WAKEUP)
+        self._send_uint8(CMD_WAKEUP)
         # Release chip select and implement t_11 timeout
         self._chip_release()
 
@@ -527,7 +538,7 @@ class ADS1256(object):
         to reset values and Polls for DRDY change / timeout afterwards.
         """
         self._chip_select()
-        self._send_byte(CMD_RESET)
+        self._send_uint8(CMD_RESET)
         self.wait_DRDY()
         # Release chip select and implement t_11 timeout
         self._chip_release()
@@ -543,9 +554,9 @@ class ADS1256(object):
         flags.
         """
         self._chip_select()
-        self._send_byte(CMD_SYNC)
+        self._send_uint8(CMD_SYNC)
         wp.delayMicroseconds(self._SYNC_TIMEOUT_US)
-        self._send_byte(CMD_WAKEUP)
+        self._send_uint8(CMD_WAKEUP)
         # Release chip select and implement t_11 timeout
         self._chip_release()
 
@@ -575,23 +586,14 @@ class ADS1256(object):
         # Wait for data to be ready
         self.wait_DRDY()
         # Send the read command
-        self._send_byte(CMD_RDATA)
+        self._send_uint8(CMD_RDATA)
         # Wait through the data pause
         wp.delayMicroseconds(self._DATA_TIMEOUT_US)
-        # The result is 24 bits little endian two's complement value by default
-        byte_3 = self._read_byte()
-        byte_2 = self._read_byte()
-        byte_1 = self._read_byte()
+        # The result is 24 bits big endian two's complement value by default
+        int24_result = self._read_int24()
         # Release chip select and implement t_11 timeout
         self._chip_release()
-
-        # Concatenate the bytes
-        int24_result = byte_3<<16 | byte_2<<8 | byte_1
-        # Take care of 24-bit two's complement
-        if int24_result < 0x800000:
-            return int24_result
-        else:
-            return int24_result - 0x1000000
+        return int24_result
 
 
     def read_oneshot(self, diff_channel):
@@ -620,35 +622,21 @@ class ADS1256(object):
         """
         self._chip_select()
         # Set input pin mux position for this cycle"
-        self._send_byte(CMD_WREG | REG_MUX)
-        self._send_byte(0x00)
-        self._send_byte(diff_channel)
+        self._send_uint8(CMD_WREG | REG_MUX, 0x00, diff_channel)
         # Restart/start the conversion cycle with set input pins
-        self._send_byte(CMD_SYNC)
+        self._send_uint8(CMD_SYNC)
         wp.delayMicroseconds(self._SYNC_TIMEOUT_US)
-        self._send_byte(CMD_WAKEUP)
-
+        self._send_uint8(CMD_WAKEUP)
         self.wait_DRDY()
         # Read data from ADC, which still returns the /previous/ conversion
         # result from before changing inputs
-        self._send_byte(CMD_RDATA)
+        self._send_uint8(CMD_RDATA)
         wp.delayMicroseconds(self._DATA_TIMEOUT_US)
-
         # The result is 24 bits little endian two's complement value by default
-        byte_3 = self._read_byte()
-        byte_2 = self._read_byte()
-        byte_1 = self._read_byte()
-
+        int24_result = self._read_int24()
         # Release chip select and implement t_11 timeout
         self._chip_release()
-
-        # Concatenate the bytes
-        int24_result = byte_3<<16 | byte_2<<8 | byte_1
-        # Take care of 24-bit two's complement
-        if int24_result < 0x800000:
-            return int24_result
-        else:
-            return int24_result - 0x1000000
+        return int24_result
 
 
     def read_and_next_is(self, diff_channel):
@@ -675,37 +663,23 @@ class ADS1256(object):
         self.wait_DRDY()
 
         # Setting mux position for next cycle"
-        self._send_byte(CMD_WREG | REG_MUX)
-        self._send_byte(0x00)
-        self._send_byte(diff_channel)
+        self._send_uint8(CMD_WREG | REG_MUX, 0x00, diff_channel)
         # Restart/start next conversion cycle with new input config
-        self._send_byte(CMD_SYNC)
+        self._send_uint8(CMD_SYNC)
         wp.delayMicroseconds(self._SYNC_TIMEOUT_US)
-        self._send_byte(CMD_WAKEUP)
+        self._send_uint8(CMD_WAKEUP)
         # The datasheet is a bit unclear if a t_11 timeout is needed here.
         # Assuming the extra timeout is the safe choice:
         wp.delayMicroseconds(self._T_11_TIMEOUT_US)
-
         # Read data from ADC, which still returns the /previous/ conversion
         # result from before changing inputs
-        self._send_byte(CMD_RDATA)
+        self._send_uint8(CMD_RDATA)
         wp.delayMicroseconds(self._DATA_TIMEOUT_US)
-
         # The result is 24 bits little endian two's complement value by default
-        byte_3 = self._read_byte()
-        byte_2 = self._read_byte()
-        byte_1 = self._read_byte()
-
+        int24_result = self._read_int24()
         # Release chip select and implement t_11 timeout
         self._chip_release()
-
-        # Concatenate the bytes
-        int24_result = byte_3<<16 | byte_2<<8 | byte_1
-        # Take care of 24-bit two's complement
-        if int24_result < 0x800000:
-            return int24_result
-        else:
-            return int24_result - 0x1000000
+        return int24_result
 
 
     def read_continue(self, ch_sequence, ch_buffer=None):
@@ -778,3 +752,7 @@ class ADS1256(object):
         for i in range(0, buf_len):
             ch_buffer[i] = self.read_and_next_is(ch_sequence[(i+1)%buf_len])
         return ch_buffer
+
+
+
+

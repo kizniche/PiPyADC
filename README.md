@@ -2,8 +2,13 @@
 Python module for interfacing Texas Instruments SPI bus based analog-
 to-digital converters with the Raspberry Pi.
 
+#### This is a fork of the [ul-gh/PiPyADC](https://github.com/ul-gh/PiPyADC) repository with an added setup.py to allow it to be installed with pip
+
 Currently only implemented class in this module is ADS1256 for the
 ADS1255 and ADS1256 chips which are register- and command compatible.
+The version implemented uses software/GPIO setting of the chip select signal
+instead of using the SPI hardware. This accounts for the hardware specifics
+of the "Waveshare High-Precision-AD-DA-Board".
 
 The ADS1255 and ADS1256 library is an implementation based purely on
 Python and the WiringPi API. On a Raspberry Pi 3, multi-channel ADC
@@ -20,11 +25,17 @@ Uses code from: https://github.com/heathsd/PyADS1256
 License: GNU LGPLv2.1, see:
 https://www.gnu.org/licenses/old-licenses/lgpl-2.1-standalone.html
 
-Ulrich Lukas, 2017-03-08
+Ulrich Lukas, 2019-02-02
 
-## Run example on Raspbian Jessie:
-    sudo pip install wiringpi
-    sudo python example.py
+## Run example on Raspbian Stretch:
+### Install wiringpi library:
+	sudo apt install python-pip
+	sudo pip install wiringpi
+### Activate SPI bus and reboot system:
+	sudo sed -E -i s/"(#)(dtparam=spi).*"/"\2=on"/ /boot/config.txt
+	sudo reboot
+### Run example:
+	sudo python example.py
 
 ## Example 2 added:
 + Importing configuration files for configuration of more than one ADC

@@ -19,7 +19,7 @@ import time
 import numpy as np
 import itertools
 from ADS1256_definitions import *
-from pipyadc_py3 import ADS1256
+from pipyadc import ADS1256
 # In this example, we pretend myconfig_2 was a different configuration file
 # named "myconfig_2.py" for a second ADS1256 chip connected to the SPI bus.
 import ADS1256_default_config as myconfig_2
@@ -95,7 +95,7 @@ def do_measurement():
     #ads1 = ADS1256(myconfig_1)
     # (Note1: See ADS1256_default_config.py, see ADS1256 datasheet)
     # (Note2: Input buffer on means limited voltage range 0V...3V for 5V supply)
-   ads2 = ADS1256(myconfig_2)
+    ads2 = ADS1256(myconfig_2)
     
     # Just as an example: Change the default sample rate of the ADS1256:
     # This shows how to acces ADS1256 registers via instance property
